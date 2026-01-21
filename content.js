@@ -156,8 +156,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     showAutoPrompt(request.classification);
     sendResponse({ success: true });
   }
+
+  if (request.type === 'SHOW_ALREADY_CLASSIFIED') {
+    console.log('✅ [Content] 显示已分类提示:', request.classification);
+    showAlreadyClassifiedNotice(request.classification);
+    sendResponse({ success: true });
+  }
+
   return true; // 保持通道开放
 });
+
+// 显示"已分类"小提示
+function showAlreadyClassifiedNotice(classification) {
+  // 检查是否已存在提示
+  if (document.getElementById('ai-classify-prompt')) return;
+  if (document.getElementById('ai-already-classified')) return;
+
+  const notice = document.createElement('div');
+  notice.id = 'ai-already-classified';
+  notice.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 2147483647;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    animation: slideIn 0.3s ease-out;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+
+  notice.innerHTML = `
+    <span>✅</span>
+    <span>该网站已归类为 <strong>${classification.category}</strong>，无需重复识别</span>
+  `;
+
+  document.body.appendChild(notice);
+
+  // 3秒后自动消失
+  setTimeout(() => {
+    notice.style.opacity = '0';
+    notice.style.transform = 'translateY(-10px)';
+    notice.style.transition = 'all 0.3s';
+    setTimeout(() => notice.remove(), 300);
+  }, 3000);
+}
 
 function showAutoPrompt(classification) {
   // 检查是否已存在

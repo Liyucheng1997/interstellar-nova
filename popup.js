@@ -37,7 +37,7 @@ function checkInitState() {
         if (result.enabled_tags && result.enabled_tags.length > 0) {
             showView('mainView');
             loadConfig();
-            loadHistory();
+            loadDomainDatabase();
             syncTabGroupColors();
         } else {
             showView('setupView');
@@ -57,7 +57,7 @@ function bindEvents() {
     document.getElementById('toggleApiKey').addEventListener('click', toggleApiKeyVisibility);
     document.getElementById('saveApiKey').addEventListener('click', saveApiKey);
     document.getElementById('classifyBtn').addEventListener('click', classifyCurrentPage);
-    document.getElementById('clearHistory').addEventListener('click', clearHistory);
+    document.getElementById('clearDomainRules').addEventListener('click', clearDomainRules);
     document.getElementById('autoModeToggle').addEventListener('change', toggleAutoMode);
 
     const delaySlider = document.getElementById('delaySlider');
@@ -410,44 +410,160 @@ function showError(message) {
     errorEl.classList.remove('hidden');
 }
 
-// 加载历史记录
-function loadHistory() {
-    chrome.storage.local.get(['classifications'], (result) => {
-        displayHistory(result.classifications || []);
+// 加载域名分类库
+function loadDomainDatabase() {
+    chrome.storage.local.get(['domain_rules'], (result) => {
+        displayDomainDatabase(result.domain_rules || {});
     });
 }
 
-// 显示历史记录
-function displayHistory(classifications) {
-    const historyList = document.getElementById('historyList');
+// 显示域名分类库
+function displayDomainDatabase(domainRules) {
+    const domainList = document.getElementById('domainList');
 
-    if (classifications.length === 0) {
-        historyList.innerHTML = '<p class="empty-state">暂无分类记录</p>';
+    const entries = Object.entries(domainRules);
+    if (entries.length === 0) {
+        domainList.innerHTML = '<p class="empty-state">暂无缓存记录</p>';
         return;
     }
 
-    historyList.innerHTML = classifications.slice(0, 10).map(item => {
-        const tagColor = getTagColor(item.category);
+    // 按时间戳排序（最新的在前）
+    entries.sort((a, b) => {
+        const timeA = a[1].timestamp ? new Date(a[1].timestamp).getTime() : 0;
+        const timeB = b[1].timestamp ? new Date(b[1].timestamp).getTime() : 0;
+        return timeB - timeA;
+    });
+
+    domainList.innerHTML = entries.map(([domain, data]) => {
+        // 兼容旧格式（直接存储category字符串）和新格式（对象）
+        const category = typeof data === 'string' ? data : data.category;
+        const timestamp = typeof data === 'object' && data.timestamp ? data.timestamp : null;
+        const tagColor = getTagColor(category);
+        const timeText = timestamp ? formatTime(timestamp) : '未知时间';
+
         return `
-            <div class="history-item">
-              <div class="history-header">
-                <span class="category-badge" style="background: ${tagColor};">${item.category}</span>
-                <span class="history-time">${formatTime(item.timestamp)}</span>
+            <div class="domain-item" data-domain="${domain}">
+              <div class="domain-info">
+                <div class="domain-name" title="${domain}">${domain}</div>
+                <div class="domain-meta">
+                  <span class="category-badge" style="background: ${tagColor}; padding: 2px 8px; font-size: 10px;">${category}</span>
+                  <span>${timeText}</span>
+                </div>
               </div>
-              <p class="history-title" title="${item.title}">${item.title}</p>
-              <p class="history-url" title="${item.url}">${truncateUrl(item.url)}</p>
+              <div class="domain-actions">
+                <button class="btn-icon-small btn-reclassify" data-action="reclassify" data-domain="${domain}" title="重新识别">🔄</button>
+                <button class="btn-icon-small btn-delete" data-action="delete" data-domain="${domain}" title="删除">🗑️</button>
+              </div>
             </div>
         `;
     }).join('');
+
+    // 使用事件委托绑定按钮点击事件
+    domainList.querySelectorAll('.btn-reclassify').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const domain = e.target.dataset.domain;
+            reclassifyDomain(domain);
+        });
+    });
+
+    domainList.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const domain = e.target.dataset.domain;
+            deleteDomainRule(domain);
+        });
+    });
 }
 
-// 清空历史记录
-function clearHistory() {
-    if (confirm('确定要清空所有历史记录吗？')) {
-        chrome.storage.local.set({ classifications: [] }, () => {
-            loadHistory();
+// 删除域名规则
+function deleteDomainRule(domain) {
+    if (!confirm(`确定要删除 ${domain} 的分类规则吗？\n删除后，该域名下的页面将重新调用AI识别。`)) {
+        return;
+    }
+
+    chrome.storage.local.get(['domain_rules'], (result) => {
+        const rules = result.domain_rules || {};
+        delete rules[domain];
+        chrome.storage.local.set({ domain_rules: rules }, () => {
+            loadDomainDatabase();
+            showStatus(`🗑️ 已删除: ${domain}`, 'success');
+        });
+    });
+}
+
+// 重新识别域名
+async function reclassifyDomain(domain) {
+    // 显示正在处理提示
+    showStatus(`🔄 正在准备重新识别 ${domain}...`, 'info');
+
+    // 获取当前打开的该域名的标签页
+    const tabs = await chrome.tabs.query({});
+    const matchingTab = tabs.find(tab => {
+        try {
+            const url = new URL(tab.url);
+            return url.hostname === domain;
+        } catch {
+            return false;
+        }
+    });
+
+    if (!matchingTab) {
+        showStatus(`❌ 请先打开 ${domain} 的任意页面`, 'error');
+        return;
+    }
+
+    // 先删除旧规则
+    const result = await chrome.storage.local.get(['domain_rules']);
+    const rules = result.domain_rules || {};
+    delete rules[domain];
+    await chrome.storage.local.set({ domain_rules: rules });
+
+    showStatus(`🤖 正在调用AI重新识别 ${domain}...`, 'info');
+
+    try {
+        // 使用 chrome.scripting 直接注入脚本提取页面内容
+        const injectionResults = await chrome.scripting.executeScript({
+            target: { tabId: matchingTab.id },
+            func: () => {
+                return {
+                    title: document.title,
+                    text: document.body.innerText.slice(0, 5000),
+                    url: window.location.href
+                };
+            }
+        });
+
+        if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
+            showStatus(`❌ 无法获取页面内容`, 'error');
+            return;
+        }
+
+        const pageData = injectionResults[0].result;
+
+        // 发送给 background 处理分类
+        chrome.runtime.sendMessage({
+            type: 'CLASSIFY_PAGE',
+            data: pageData
+        }, (response) => {
+            if (response && response.success) {
+                loadDomainDatabase();
+                showStatus(`✅ ${domain} 重新识别完成！分类: ${response.result.category}`, 'success');
+            } else {
+                showStatus(`❌ 识别失败: ${response?.error || '未知错误'}`, 'error');
+            }
+        });
+
+    } catch (e) {
+        showStatus(`❌ 识别失败: ${e.message}`, 'error');
+    }
+}
+
+// 清空所有域名规则
+function clearDomainRules() {
+    if (confirm('确定要清空所有域名分类规则吗？\n清空后，所有页面将重新调用AI识别。')) {
+        chrome.storage.local.set({ domain_rules: {} }, () => {
+            loadDomainDatabase();
             document.getElementById('currentResult').classList.add('hidden');
-            showStatus('历史记录已清空', 'info');
+            showStatus('域名分类库已清空', 'info');
         });
     }
 }
@@ -469,3 +585,7 @@ function formatTime(timestamp) {
 function truncateUrl(url) {
     return url.length <= 50 ? url : url.slice(0, 47) + '...';
 }
+
+// 暴露到全局作用域，供 onclick 事件调用
+window.deleteDomainRule = deleteDomainRule;
+window.reclassifyDomain = reclassifyDomain;

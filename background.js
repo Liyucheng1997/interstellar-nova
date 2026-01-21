@@ -505,7 +505,7 @@ async function checkCache(url) {
     });
 }
 
-// 检查域名规则
+// 检查域名规则 (兼容新旧格式)
 async function checkDomainRule(url) {
     const domain = getDomain(url);
     if (!domain) return null;
@@ -513,8 +513,10 @@ async function checkDomainRule(url) {
     return new Promise((resolve) => {
         chrome.storage.local.get(['domain_rules'], (result) => {
             const rules = result.domain_rules || {};
-            const category = rules[domain];
-            if (category) {
+            const data = rules[domain];
+            if (data) {
+                // 兼容旧格式（字符串）和新格式（对象）
+                const category = typeof data === 'string' ? data : data.category;
                 resolve({ domain, category });
             } else {
                 resolve(null);
@@ -523,7 +525,7 @@ async function checkDomainRule(url) {
     });
 }
 
-// 保存域名规则
+// 保存域名规则 (含时间戳)
 async function saveDomainRule(url, category) {
     const domain = getDomain(url);
     if (!domain) return;
@@ -531,8 +533,11 @@ async function saveDomainRule(url, category) {
     return new Promise((resolve) => {
         chrome.storage.local.get(['domain_rules'], (result) => {
             const rules = result.domain_rules || {};
-            // 更新规则 (覆盖旧的)
-            rules[domain] = category;
+            // 更新规则 (覆盖旧的)，新格式包含时间戳
+            rules[domain] = {
+                category: category,
+                timestamp: new Date().toISOString()
+            };
             chrome.storage.local.set({ domain_rules: rules }, () => {
                 console.log(`📏 更新域名规则: ${domain} -> ${category}`);
                 resolve();
@@ -613,6 +618,25 @@ function startAutoClassifyTimer(tabId, url) {
                 if (currentTab && currentTab.url === url) {
                     console.log(`🔍 [Auto] 开始分析页面: ${url}`);
 
+                    // 先检查是否已有域名规则（用户已手动分类）
+                    const existingRule = await checkDomainRule(url);
+                    if (existingRule) {
+                        console.log('✅ [Auto] 该域名已有分类规则，跳过自动分类:', existingRule);
+                        // 发送"已分类"提示
+                        chrome.tabs.sendMessage(tabId, {
+                            type: 'SHOW_ALREADY_CLASSIFIED',
+                            classification: {
+                                category: existingRule.category,
+                                reason: '该网站已有分类记录，无需重复识别'
+                            }
+                        }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.warn('⚠️ [Auto] 发送提示失败');
+                            }
+                        });
+                        return;
+                    }
+
                     // 提取页面内容
                     const injectionResults = await chrome.scripting.executeScript({
                         target: { tabId: tabId },
@@ -628,18 +652,40 @@ function startAutoClassifyTimer(tabId, url) {
                     if (injectionResults && injectionResults[0]) {
                         const pageData = injectionResults[0].result;
 
-                        // 执行分类 (不自动移动)
+                        // ★ 核心检查：该标签页是否已经在某个标签组中？
+                        if (currentTab.groupId && currentTab.groupId !== -1) {
+                            try {
+                                const group = await chrome.tabGroups.get(currentTab.groupId);
+                                console.log('✅ [Auto] 该标签页已在标签组中:', group.title);
+                                // 直接显示"已归类"绿色提示
+                                chrome.tabs.sendMessage(tabId, {
+                                    type: 'SHOW_ALREADY_CLASSIFIED',
+                                    classification: {
+                                        category: group.title || '未命名组'
+                                    }
+                                }, () => {
+                                    if (chrome.runtime.lastError) {
+                                        console.warn('⚠️ [Auto] 发送提示失败');
+                                    }
+                                });
+                                return; // 结束，不再调用AI
+                            } catch (e) {
+                                console.warn('⚠️ [Auto] 获取标签组信息失败:', e);
+                            }
+                        }
+
+                        // 没有在标签组中，调用AI进行分类
                         console.log('🤖 [Auto] 调用AI分类...');
                         const classification = await handleClassifyRequest(pageData, currentTab, { autoMove: false });
                         console.log('✅ [Auto] 分类完成:', classification);
 
-                        // 发送提示给 Content Script
+                        // 发送正常的分类建议提示
                         chrome.tabs.sendMessage(tabId, {
                             type: 'SHOW_AUTO_PROMPT',
                             classification: classification
                         }, (response) => {
                             if (chrome.runtime.lastError) {
-                                console.warn('⚠️ [Auto] 发送提示失败 (可能Content Script未加载):', chrome.runtime.lastError.message);
+                                console.warn('⚠️ [Auto] 发送提示失败');
                             } else {
                                 console.log('📨 [Auto] 提示已发送');
                             }
