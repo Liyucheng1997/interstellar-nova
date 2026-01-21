@@ -145,3 +145,110 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
+// 监听自动分类提示
+console.log('🔌 [Content] AI分类扩展已加载');
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('📩 [Content] 收到消息:', request.type);
+
+  if (request.type === 'SHOW_AUTO_PROMPT') {
+    console.log('🎯 [Content] 显示自动分类提示:', request.classification);
+    showAutoPrompt(request.classification);
+    sendResponse({ success: true });
+  }
+  return true; // 保持通道开放
+});
+
+function showAutoPrompt(classification) {
+  // 检查是否已存在
+  if (document.getElementById('ai-classify-prompt')) return;
+
+  const prompt = document.createElement('div');
+  prompt.id = 'ai-classify-prompt';
+  prompt.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 2147483647;
+        background: white;
+        padding: 16px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        font-family: system-ui, -apple-system, sans-serif;
+        width: 300px;
+        animation: slideIn 0.3s ease-out;
+        border: 1px solid #eee;
+        color: #333;
+    `;
+
+  const categoryColor = getCategoryColor(classification.category);
+
+  prompt.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-weight:600; font-size:14px; display:flex; align-items:center; gap:6px; color:#333;">
+                ✨ AI 智能分类建议
+            </span>
+            <button id="ai-prompt-close" style="background:none; border:none; cursor:pointer; font-size:18px; color:#999; padding:0; line-height:1;">&times;</button>
+        </div>
+        <p style="font-size:13px; color:#555; margin:0 0 12px 0; line-height:1.5;">
+            检测到当前页面属于 <strong style="color:${categoryColor}">${classification.category}</strong>，是否将其归类？
+        </p>
+        <div style="display:flex; gap:8px;">
+            <button id="ai-prompt-confirm" style="flex:1; background:#667eea; color:white; border:none; padding:8px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; transition: background 0.2s;">
+                确认归类
+            </button>
+            <button id="ai-prompt-dismiss" style="flex:1; background:#f5f5f5; color:#666; border:none; padding:8px; border-radius:6px; cursor:pointer; font-size:13px; transition: background 0.2s;">
+                暂不需要
+            </button>
+        </div>
+    `;
+
+  document.body.appendChild(prompt);
+
+  // Bind events
+  const confirmBtn = document.getElementById('ai-prompt-confirm');
+  const dismissBtn = document.getElementById('ai-prompt-dismiss');
+  const closeBtn = document.getElementById('ai-prompt-close');
+
+  confirmBtn.onmouseover = () => confirmBtn.style.background = '#5568d3';
+  confirmBtn.onmouseout = () => confirmBtn.style.background = '#667eea';
+
+  dismissBtn.onmouseover = () => dismissBtn.style.background = '#e0e0e0';
+  dismissBtn.onmouseout = () => dismissBtn.style.background = '#f5f5f5';
+
+  confirmBtn.onclick = () => {
+    chrome.runtime.sendMessage({
+      type: 'CONFIRM_AUTO_CLASSIFY',
+      category: classification.category
+    });
+    removePrompt();
+  };
+
+  dismissBtn.onclick = removePrompt;
+  closeBtn.onclick = removePrompt;
+
+  function removePrompt() {
+    prompt.style.opacity = '0';
+    prompt.style.transform = 'translateY(-10px)';
+    prompt.style.transition = 'all 0.3s';
+    setTimeout(() => {
+      if (prompt.parentNode) prompt.remove();
+    }, 300);
+  }
+}
+
+function getCategoryColor(category) {
+  const colors = {
+    '学习工作': '#1A73E8',
+    '影视娱乐': '#9334E6',
+    'AI工具': '#12B5CB',
+    '购物消费': '#D93025',
+    '社交媒体': '#E52592',
+    '新闻阅读': '#5F6368',
+    '技术开发': '#1E8E3E',
+    '金融理财': '#E8710A',
+    '生活日常': '#F9AB00',
+    '其他分类': '#5F6368'
+  };
+  return colors[category] || '#667eea';
+}

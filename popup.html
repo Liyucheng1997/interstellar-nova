@@ -39,6 +39,33 @@
         </div>
       </header>
 
+      <!-- 模式设置 -->
+      <section class="section mode-section" style="padding-bottom: 12px;">
+        <div class="mode-toggle-container" style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+          <label class="switch">
+            <input type="checkbox" id="autoModeToggle">
+            <span class="slider round"></span>
+          </label>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 16px;">⚡</span>
+            <span class="mode-label" style="font-weight: 500;">自动分类模式</span>
+          </div>
+        </div>
+
+        <div id="autoDelayContainer">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-bottom: 6px;">
+            <span>⏳ 触发等待时长</span>
+            <span id="delayValue" style="font-weight: 500; color: #667eea;">60秒</span>
+          </div>
+          <input type="range" id="delaySlider" min="10" max="60" step="5" value="30"
+            style="width: 100%; cursor: pointer;">
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #999; margin-top: 2px;">
+            <span>10秒</span>
+            <span>1分钟</span>
+          </div>
+        </div>
+      </section>
+
       <!-- API密钥设置 -->
       <section class="section api-section">
         <div class="section-header">

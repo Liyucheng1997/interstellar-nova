@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.0] - 2026-01-21
+
+### Added
+
+- **Automatic Classification Mode**:
+  - New toggle switch to enable/disable automatic classification.
+  - Customizable delay timer (10 seconds to 1 minute) before triggering auto-classification.
+  - Non-intrusive in-page prompt appears after analysis, asking user to confirm or dismiss.
+  - Background timer tracks page stay duration and triggers classification automatically.
+- **Improved Error Handling**:
+  - User-friendly error messages for restricted pages (Chrome internal pages, new tab, etc.).
+  - Clear feedback when a page cannot be classified.
+
+### Changed
+
+- UI layout: moved auto-mode toggle switch to the left for better accessibility.
+- Added delay slider with visual feedback showing current wait time.
+
+---
+
 ## [1.3.0] - 2026-01-21
 
 ### Added

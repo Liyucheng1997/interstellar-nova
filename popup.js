@@ -58,6 +58,13 @@ function bindEvents() {
     document.getElementById('saveApiKey').addEventListener('click', saveApiKey);
     document.getElementById('classifyBtn').addEventListener('click', classifyCurrentPage);
     document.getElementById('clearHistory').addEventListener('click', clearHistory);
+    document.getElementById('autoModeToggle').addEventListener('change', toggleAutoMode);
+
+    const delaySlider = document.getElementById('delaySlider');
+    if (delaySlider) {
+        delaySlider.addEventListener('input', updateDelayDisplay);
+        delaySlider.addEventListener('change', saveAutoDelay);
+    }
 }
 
 // 切换视图
@@ -144,7 +151,7 @@ function syncTabGroupColors() {
 
 // 加载配置
 function loadConfig() {
-    chrome.storage.local.get(['ai_provider', 'openai_api_key', 'gemini_api_key'], (result) => {
+    chrome.storage.local.get(['ai_provider', 'openai_api_key', 'gemini_api_key', 'settings'], (result) => {
         const provider = result.ai_provider || 'openai';
         document.getElementById('aiProvider').value = provider;
 
@@ -155,7 +162,71 @@ function loadConfig() {
         } else {
             document.getElementById('apiKey').value = '';
         }
+
+        // 加载自动模式设置
+        const settings = result.settings || {};
+        const autoToggle = document.getElementById('autoModeToggle');
+        if (autoToggle) {
+            autoToggle.checked = !!settings.autoClassify;
+            toggleDelaySlider(settings.autoClassify);
+        }
+
+        const delaySlider = document.getElementById('delaySlider');
+        if (delaySlider) {
+            const delay = settings.autoDelay || 60000;
+            delaySlider.value = delay / 1000;
+            updateDelayDisplay({ target: delaySlider });
+        }
+
         updateHelpText(provider);
+    });
+}
+
+// 切换自动模式
+function toggleAutoMode(e) {
+    const isAuto = e.target.checked;
+    toggleDelaySlider(isAuto);
+
+    chrome.storage.local.get(['settings'], (result) => {
+        const settings = result.settings || {};
+        settings.autoClassify = isAuto;
+        chrome.storage.local.set({ settings }, () => {
+            console.log('自动分类模式:', isAuto ? '开启' : '关闭');
+        });
+    });
+}
+
+function toggleDelaySlider(enabled) {
+    const container = document.getElementById('autoDelayContainer');
+    if (container) {
+        container.style.opacity = enabled ? '1' : '0.5';
+        container.style.pointerEvents = enabled ? 'auto' : 'none';
+        container.style.transition = 'opacity 0.3s';
+    }
+}
+
+function updateDelayDisplay(e) {
+    const seconds = parseInt(e.target.value);
+    const display = document.getElementById('delayValue');
+    if (display) {
+        if (seconds < 60) {
+            display.textContent = `${seconds}秒`;
+        } else {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            display.textContent = secs > 0 ? `${mins}分${secs}秒` : `${mins}分钟`;
+        }
+    }
+}
+
+function saveAutoDelay(e) {
+    const delayMs = e.target.value * 1000;
+    chrome.storage.local.get(['settings'], (result) => {
+        const settings = result.settings || {};
+        settings.autoDelay = delayMs;
+        chrome.storage.local.set({ settings }, () => {
+            console.log('自动分类延迟:', delayMs, 'ms');
+        });
     });
 }
 
@@ -237,16 +308,41 @@ async function classifyCurrentPage() {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab || !tab.id) throw new Error('无法获取当前标签页');
 
+        // 检查是否为受限页面
+        if (isRestrictedPage(tab.url)) {
+            throw new Error('此页面无法分类（浏览器内置页面）');
+        }
+
         await chrome.tabs.sendMessage(tab.id, { type: 'CLASSIFY_CURRENT_PAGE' });
         await waitForClassification(tab.url);
         showLatestResult(tab.url);
     } catch (error) {
-        showError(error.message || '分类失败');
+        // 优化错误提示
+        let message = error.message || '分类失败';
+        if (message.includes('Receiving end does not exist') || message.includes('Could not establish connection')) {
+            message = '此页面无法分类（请刷新页面后重试，或该页面不支持扩展）';
+        }
+        showError(message);
     } finally {
         btn.disabled = false;
         btnText.textContent = '开始分类';
         spinner.classList.add('hidden');
     }
+}
+
+// 检查是否为受限页面
+function isRestrictedPage(url) {
+    if (!url) return true;
+    const restrictedPrefixes = [
+        'chrome://',
+        'chrome-extension://',
+        'edge://',
+        'about:',
+        'file://',
+        'devtools://',
+        'chrome-search://'
+    ];
+    return restrictedPrefixes.some(prefix => url.startsWith(prefix));
 }
 
 // 等待分类完成

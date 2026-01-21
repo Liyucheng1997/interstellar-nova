@@ -37,7 +37,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // 处理分类请求
-async function handleClassifyRequest(pageData, tab) {
+async function handleClassifyRequest(pageData, tab, options = { autoMove: true }) {
     // 0. 检查缓存 (URL完全匹配)
     const cachedResult = await checkCache(pageData.url);
     if (cachedResult) {
@@ -50,7 +50,7 @@ async function handleClassifyRequest(pageData, tab) {
         });
 
         // 如果有tab，确保它在正确的组里
-        if (tab && tab.id) {
+        if (options.autoMove && tab && tab.id) {
             await addToTabGroup(tab.id, cachedResult.category);
         }
         return { ...cachedResult, fromCache: true };
@@ -68,7 +68,7 @@ async function handleClassifyRequest(pageData, tab) {
         };
         await saveClassification(pageData, classification);
 
-        if (tab && tab.id) {
+        if (options.autoMove && tab && tab.id) {
             await addToTabGroup(tab.id, classification.category);
         }
         return { ...classification, fromDomainRule: true };
@@ -92,7 +92,7 @@ async function handleClassifyRequest(pageData, tab) {
     await saveClassification(pageData, classification);
 
     // 4. 将标签页添加到对应的标签组
-    if (tab && tab.id) {
+    if (options.autoMove && tab && tab.id) {
         await addToTabGroup(tab.id, classification.category);
     }
 
@@ -550,3 +550,117 @@ function getDomain(url) {
         return null;
     }
 }
+
+// --- 自动分类逻辑 ---
+
+let tabTimers = {};
+
+// 监听标签页更新
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+        startAutoClassifyTimer(tabId, tab.url);
+    }
+});
+
+// 监听标签页移除
+chrome.tabs.onRemoved.addListener((tabId) => {
+    if (tabTimers[tabId]) {
+        clearTimeout(tabTimers[tabId]);
+        delete tabTimers[tabId];
+    }
+});
+
+// 启动自动分类计时器
+function startAutoClassifyTimer(tabId, url) {
+    if (tabTimers[tabId] && tabTimers[tabId] !== 'pending') {
+        clearTimeout(tabTimers[tabId]);
+    }
+
+    // 标记为正在准备计时
+    tabTimers[tabId] = 'pending';
+
+    // 获取设置的延迟 (默认60s)
+    chrome.storage.local.get(['settings'], (result) => {
+        // 如果在获取设置期间标签页被关闭 (tabTimers[tabId]被删除)，则不启动计时器
+        if (!tabTimers[tabId]) return;
+
+        const settings = result.settings || {};
+        const delay = settings.autoDelay || 60000;
+
+        console.log(`⏱️ [Auto] 计时器启动: Tab ${tabId}, 延迟 ${delay}ms, URL: ${url}`);
+
+        // 启动计时器
+        tabTimers[tabId] = setTimeout(async () => {
+            try {
+                console.log(`⏰ [Auto] 计时器触发: Tab ${tabId}`);
+
+                // 检查配置
+                const currentSettings = (await chrome.storage.local.get(['settings'])).settings;
+                if (!currentSettings || !currentSettings.autoClassify) {
+                    console.log('🚫 [Auto] 自动分类已关闭，跳过');
+                    return;
+                }
+
+                // 再次检查标签页状态
+                let currentTab;
+                try {
+                    currentTab = await chrome.tabs.get(tabId);
+                } catch (e) {
+                    console.log('🚫 [Auto] 标签页已不存在');
+                    return;
+                }
+
+                if (currentTab && currentTab.url === url) {
+                    console.log(`🔍 [Auto] 开始分析页面: ${url}`);
+
+                    // 提取页面内容
+                    const injectionResults = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => {
+                            return {
+                                title: document.title,
+                                text: document.body.innerText.slice(0, 5000),
+                                url: window.location.href
+                            };
+                        }
+                    });
+
+                    if (injectionResults && injectionResults[0]) {
+                        const pageData = injectionResults[0].result;
+
+                        // 执行分类 (不自动移动)
+                        console.log('🤖 [Auto] 调用AI分类...');
+                        const classification = await handleClassifyRequest(pageData, currentTab, { autoMove: false });
+                        console.log('✅ [Auto] 分类完成:', classification);
+
+                        // 发送提示给 Content Script
+                        chrome.tabs.sendMessage(tabId, {
+                            type: 'SHOW_AUTO_PROMPT',
+                            classification: classification
+                        }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn('⚠️ [Auto] 发送提示失败 (可能Content Script未加载):', chrome.runtime.lastError.message);
+                            } else {
+                                console.log('📨 [Auto] 提示已发送');
+                            }
+                        });
+                    }
+                } else {
+                    console.log('🚫 [Auto] URL已变更，跳过');
+                }
+            } catch (e) {
+                console.error('❌ [Auto] 自动分类出错:', e);
+            }
+        }, delay);
+    });
+}
+
+// 监听确认消息
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'CONFIRM_AUTO_CLASSIFY') {
+        const { category } = request;
+        if (sender.tab) {
+            addToTabGroup(sender.tab.id, category);
+        }
+    }
+});
