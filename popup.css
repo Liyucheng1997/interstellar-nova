@@ -204,6 +204,28 @@ body {
   color: #5568d3;
 }
 
+.btn-large {
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.btn-secondary {
+  background: #f8f9fa;
+  border: 1px solid #ddd;
+  color: #555;
+}
+
+.btn-secondary:hover {
+  background: #e2e6ea;
+  border-color: #dae0e5;
+}
+
 /* 状态消息 */
 .status-message {
   font-size: 12px;
@@ -249,38 +271,6 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: white;
-}
-
-.category-badge.news {
-  background: #e74c3c;
-}
-
-.category-badge.tech {
-  background: #3498db;
-}
-
-.category-badge.entertainment {
-  background: #9b59b6;
-}
-
-.category-badge.shopping {
-  background: #f39c12;
-}
-
-.category-badge.social {
-  background: #1abc9c;
-}
-
-.category-badge.education {
-  background: #2ecc71;
-}
-
-.category-badge.life {
-  background: #e67e22;
-}
-
-.category-badge.other {
-  background: #95a5a6;
 }
 
 .confidence-badge {
@@ -431,4 +421,127 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+/* 视图切换 */
+.view {
+  transition: opacity 0.3s ease;
+}
+
+.view.hidden {
+  display: none;
+  opacity: 0;
+}
+
+/* 头部内容布局 */
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 标签网格 (Setup View) */
+.tags-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* 标签卡片 - 左对齐以保持圆点对齐 */
+.tag-card {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  background: white;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+  transition: all 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.tag-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 重置按钮 - 固定宽度保持对齐 */
+.tag-reset-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #eee;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 16px;
+  color: #888;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.tag-reset-btn:hover {
+  background: #ddd;
+  color: #333;
+}
+
+/* 颜色选择器容器 */
+.tag-color-wrapper {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* 可见的颜色圆点 */
+.tag-color-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.tag-color-wrapper:hover .tag-color-dot {
+  transform: scale(1.2);
+}
+
+/* 隐藏的颜色选择器 */
+.tag-color-picker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.tag-name {
+  white-space: nowrap;
+}
+
+.tag-card:hover {
+  background: #f8f9fa;
+  border-color: #c0c4cc;
+  transform: translateY(-1px);
+}
+
+.tag-card.selected {
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }

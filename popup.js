@@ -4,14 +4,55 @@ document.addEventListener('DOMContentLoaded', initPopup);
 
 let isApiKeyVisible = false;
 
+// 默认标签列表
+const DEFAULT_TAGS = [
+    '学习工作', '影视娱乐', 'AI工具', '购物消费',
+    '社交媒体', '新闻阅读', '技术开发', '金融理财',
+    '生活日常', '其他分类'
+];
+
+// 固定颜色映射 (使用Chrome标签组的真实颜色 - 深色版)
+// Chrome支持: grey, blue, red, yellow, green, pink, purple, cyan, orange
+const TAG_COLORS = {
+    '学习工作': { chrome: 'blue', hex: '#1A73E8' },  // 蓝色
+    '影视娱乐': { chrome: 'purple', hex: '#9334E6' },  // 紫色
+    'AI工具': { chrome: 'cyan', hex: '#12B5CB' },  // 青色
+    '购物消费': { chrome: 'red', hex: '#D93025' },  // 红色
+    '社交媒体': { chrome: 'pink', hex: '#E52592' },  // 粉色
+    '新闻阅读': { chrome: 'grey', hex: '#5F6368' },  // 灰色
+    '技术开发': { chrome: 'green', hex: '#1E8E3E' },  // 绿色
+    '金融理财': { chrome: 'orange', hex: '#E8710A' },  // 橙色
+    '生活日常': { chrome: 'yellow', hex: '#F9AB00' },  // 黄色
+    '其他分类': { chrome: 'grey', hex: '#5F6368' }   // 灰色
+};
+
 function initPopup() {
-    // 加载配置
-    loadConfig();
+    checkInitState();
+    bindEvents();
+}
 
-    // 加载历史记录
-    loadHistory();
+// 检查初始化状态
+function checkInitState() {
+    chrome.storage.local.get(['enabled_tags'], (result) => {
+        if (result.enabled_tags && result.enabled_tags.length > 0) {
+            showView('mainView');
+            loadConfig();
+            loadHistory();
+            syncTabGroupColors();
+        } else {
+            showView('setupView');
+            renderTagsGrid();
+        }
+    });
+}
 
-    // 绑定事件监听
+// 绑定事件
+function bindEvents() {
+    document.getElementById('enterMainBtn').addEventListener('click', saveTagsAndEnter);
+    document.getElementById('openSettings').addEventListener('click', () => {
+        showView('setupView');
+        renderTagsGrid();
+    });
     document.getElementById('aiProvider').addEventListener('change', onProviderChange);
     document.getElementById('toggleApiKey').addEventListener('click', toggleApiKeyVisibility);
     document.getElementById('saveApiKey').addEventListener('click', saveApiKey);
@@ -19,14 +60,94 @@ function initPopup() {
     document.getElementById('clearHistory').addEventListener('click', clearHistory);
 }
 
+// 切换视图
+function showView(viewId) {
+    document.querySelectorAll('.view').forEach(el => {
+        el.classList.add('hidden');
+        el.style.opacity = '0';
+    });
+    const target = document.getElementById(viewId);
+    target.classList.remove('hidden');
+    setTimeout(() => { target.style.opacity = '1'; }, 10);
+}
+
+// 获取标签颜色 (固定颜色)
+function getTagColor(tag) {
+    return TAG_COLORS[tag]?.hex || '#9AA0A6';
+}
+
+// 渲染标签网格 - 简化版
+function renderTagsGrid() {
+    chrome.storage.local.get(['enabled_tags'], (result) => {
+        const enabledTags = result.enabled_tags || DEFAULT_TAGS;
+        const grid = document.getElementById('tagsGrid');
+
+        grid.innerHTML = DEFAULT_TAGS.map(tag => {
+            const isSelected = enabledTags.includes(tag);
+            const tagColor = getTagColor(tag);
+
+            return `
+                <div class="tag-card ${isSelected ? 'selected' : ''}" 
+                     data-tag="${tag}" 
+                     style="${isSelected ? `border-color: ${tagColor}; background: ${tagColor}20;` : ''}">
+                    <div class="tag-content">
+                        <span class="tag-name">${tag}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // 点击事件
+        document.querySelectorAll('.tag-card').forEach(card => {
+            card.addEventListener('click', function () {
+                this.classList.toggle('selected');
+                const tag = this.getAttribute('data-tag');
+                const tagColor = getTagColor(tag);
+                if (this.classList.contains('selected')) {
+                    this.style.borderColor = tagColor;
+                    this.style.background = tagColor + '20';
+                } else {
+                    this.style.borderColor = '#ddd';
+                    this.style.background = 'white';
+                }
+            });
+        });
+    });
+}
+
+// 保存标签并进入主界面
+function saveTagsAndEnter() {
+    const selectedElements = document.querySelectorAll('.tag-card.selected');
+    const enabledTags = Array.from(selectedElements).map(el => el.getAttribute('data-tag'));
+
+    if (enabledTags.length === 0) {
+        alert('请至少选择一个标签');
+        return;
+    }
+
+    chrome.storage.local.set({ enabled_tags: enabledTags }, () => {
+        showView('mainView');
+        loadConfig();
+        loadHistory();
+        syncTabGroupColors();
+    });
+}
+
+// 同步标签组颜色
+function syncTabGroupColors() {
+    chrome.runtime.sendMessage({ type: 'SYNC_TAB_GROUP_COLORS' }, (response) => {
+        if (response && response.success) {
+            console.log('✅ 标签组颜色同步成功');
+        }
+    });
+}
+
 // 加载配置
 function loadConfig() {
     chrome.storage.local.get(['ai_provider', 'openai_api_key', 'gemini_api_key'], (result) => {
-        // 设置提供商选择
         const provider = result.ai_provider || 'openai';
         document.getElementById('aiProvider').value = provider;
 
-        // 加载对应的API密钥
         const apiKeyField = provider === 'openai' ? 'openai_api_key' : 'gemini_api_key';
         if (result[apiKeyField]) {
             document.getElementById('apiKey').value = result[apiKeyField];
@@ -34,47 +155,45 @@ function loadConfig() {
         } else {
             document.getElementById('apiKey').value = '';
         }
-
-        // 更新帮助文本
         updateHelpText(provider);
     });
 }
 
-// 提供商变更处理
+// 提供商变更
 function onProviderChange() {
     const provider = document.getElementById('aiProvider').value;
-
-    // 加载对应的API密钥
     chrome.storage.local.get(['openai_api_key', 'gemini_api_key'], (result) => {
         const apiKeyField = provider === 'openai' ? 'openai_api_key' : 'gemini_api_key';
-        document.getElementById('apiKey').value = result[apiKeyField] || '';
-
-        // 更新帮助文本
-        updateHelpText(provider);
-
-        // 保存提供商选择
+        const apiKey = result[apiKeyField] || '';
+        document.getElementById('apiKey').value = apiKey;
         chrome.storage.local.set({ ai_provider: provider });
+        updateHelpText(provider);
+        if (apiKey) {
+            showStatus('已切换到 ' + (provider === 'openai' ? 'OpenAI' : 'Gemini'), 'info');
+        } else {
+            showStatus('请配置 ' + (provider === 'openai' ? 'OpenAI' : 'Gemini') + ' API密钥', 'info');
+        }
     });
 }
 
 // 更新帮助文本
 function updateHelpText(provider) {
+    const helpText = document.getElementById('apiHelpText');
     const link = document.getElementById('apiProviderLink');
     if (provider === 'openai') {
-        link.textContent = 'OpenAI平台';
         link.href = 'https://platform.openai.com/api-keys';
+        link.textContent = 'OpenAI平台';
     } else {
-        link.textContent = 'Google AI Studio';
         link.href = 'https://aistudio.google.com/app/apikey';
+        link.textContent = 'Google AI Studio';
     }
 }
 
-// 切换API密钥可见性
+// 切换密钥可见性
 function toggleApiKeyVisibility() {
-    const input = document.getElementById('apiKey');
+    const apiKeyInput = document.getElementById('apiKey');
     isApiKeyVisible = !isApiKeyVisible;
-    input.type = isApiKeyVisible ? 'text' : 'password';
-    document.getElementById('toggleApiKey').textContent = isApiKeyVisible ? '🙈' : '👁️';
+    apiKeyInput.type = isApiKeyVisible ? 'text' : 'password';
 }
 
 // 保存API密钥
@@ -83,29 +202,23 @@ function saveApiKey() {
     const provider = document.getElementById('aiProvider').value;
 
     if (!apiKey) {
-        showStatus('请输入有效的API密钥', 'error');
+        showStatus('请输入API密钥', 'error');
         return;
     }
 
-    const apiKeyField = provider === 'openai' ? 'openai_api_key' : 'gemini_api_key';
-    chrome.storage.local.set({
-        [apiKeyField]: apiKey,
-        ai_provider: provider
-    }, () => {
+    const keyField = provider === 'openai' ? 'openai_api_key' : 'gemini_api_key';
+    chrome.storage.local.set({ [keyField]: apiKey, ai_provider: provider }, () => {
         showStatus('API密钥已保存 ✓', 'success');
     });
 }
 
-// 显示状态消息
-function showStatus(message, type = 'info') {
+// 显示状态
+function showStatus(message, type) {
     const statusEl = document.getElementById('apiKeyStatus');
     statusEl.textContent = message;
     statusEl.className = `status-message ${type}`;
-
-    // 3秒后淡出
-    setTimeout(() => {
-        statusEl.className = 'status-message';
-    }, 3000);
+    statusEl.style.opacity = '1';
+    setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
 }
 
 // 分类当前页面
@@ -113,45 +226,23 @@ async function classifyCurrentPage() {
     const btn = document.getElementById('classifyBtn');
     const btnText = btn.querySelector('.btn-text');
     const spinner = btn.querySelector('.spinner');
-    const errorMessage = document.getElementById('errorMessage');
-    const currentResult = document.getElementById('currentResult');
 
-    // 隐藏之前的错误和结果
-    errorMessage.classList.add('hidden');
-    currentResult.classList.add('hidden');
-
-    // 显示加载状态
-    btn.disabled = true;
-    btnText.textContent = '分析中...';
-    spinner.classList.remove('hidden');
+    document.getElementById('errorMessage').classList.add('hidden');
 
     try {
-        // 获取当前活动标签页
+        btn.disabled = true;
+        btnText.textContent = '分析中...';
+        spinner.classList.remove('hidden');
+
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab || !tab.id) throw new Error('无法获取当前标签页');
 
-        if (!tab || !tab.id) {
-            throw new Error('无法获取当前标签页');
-        }
-
-        // 向content script发送分类请求
-        const response = await chrome.tabs.sendMessage(tab.id, {
-            type: 'CLASSIFY_CURRENT_PAGE'
-        });
-
-        // 等待分类完成（监听存储变化）
+        await chrome.tabs.sendMessage(tab.id, { type: 'CLASSIFY_CURRENT_PAGE' });
         await waitForClassification(tab.url);
-
-        // 重新加载历史记录
-        loadHistory();
-
-        // 显示最新的分类结果
         showLatestResult(tab.url);
-
     } catch (error) {
-        console.error('分类失败:', error);
-        showError(error.message || '分类失败，请检查API密钥配置');
+        showError(error.message || '分类失败');
     } finally {
-        // 恢复按钮状态
         btn.disabled = false;
         btnText.textContent = '开始分类';
         spinner.classList.add('hidden');
@@ -162,37 +253,28 @@ async function classifyCurrentPage() {
 function waitForClassification(url, timeout = 30000) {
     return new Promise((resolve, reject) => {
         const startTime = Date.now();
-
         const checkInterval = setInterval(() => {
             chrome.storage.local.get(['classifications'], (result) => {
                 const classifications = result.classifications || [];
                 const latest = classifications[0];
-
-                // 检查是否有新的分类结果
                 if (latest && latest.url === url && Date.now() - new Date(latest.timestamp).getTime() < 5000) {
                     clearInterval(checkInterval);
                     resolve(latest);
                 }
-
-                // 超时检查
                 if (Date.now() - startTime > timeout) {
                     clearInterval(checkInterval);
-                    reject(new Error('分类超时，请重试'));
+                    reject(new Error('分类超时'));
                 }
             });
         }, 500);
     });
 }
 
-// 显示最新的分类结果
+// 显示最新结果
 function showLatestResult(url) {
     chrome.storage.local.get(['classifications'], (result) => {
-        const classifications = result.classifications || [];
-        const latest = classifications.find(c => c.url === url);
-
-        if (latest) {
-            displayResult(latest);
-        }
+        const latest = (result.classifications || []).find(c => c.url === url);
+        if (latest) displayResult(latest);
     });
 }
 
@@ -205,8 +287,11 @@ function displayResult(result) {
     const categoryReason = document.getElementById('categoryReason');
     const timestamp = document.getElementById('timestamp');
 
+    const tagColor = getTagColor(result.category);
+
     categoryBadge.textContent = result.category;
-    categoryBadge.className = `category-badge ${getCategoryClass(result.category)}`;
+    categoryBadge.style.background = tagColor;
+    categoryBadge.className = 'category-badge';
 
     confidenceBadge.textContent = getConfidenceText(result.confidence);
     confidenceBadge.className = `confidence-badge ${result.confidence}`;
@@ -218,7 +303,7 @@ function displayResult(result) {
     resultCard.classList.remove('hidden');
 }
 
-// 显示错误消息
+// 显示错误
 function showError(message) {
     const errorEl = document.getElementById('errorMessage');
     errorEl.textContent = `❌ ${message}`;
@@ -228,8 +313,7 @@ function showError(message) {
 // 加载历史记录
 function loadHistory() {
     chrome.storage.local.get(['classifications'], (result) => {
-        const classifications = result.classifications || [];
-        displayHistory(classifications);
+        displayHistory(result.classifications || []);
     });
 }
 
@@ -242,19 +326,19 @@ function displayHistory(classifications) {
         return;
     }
 
-    // 只显示最近10条
-    const recentItems = classifications.slice(0, 10);
-
-    historyList.innerHTML = recentItems.map(item => `
-    <div class="history-item">
-      <div class="history-header">
-        <span class="category-badge ${getCategoryClass(item.category)}">${item.category}</span>
-        <span class="history-time">${formatTime(item.timestamp)}</span>
-      </div>
-      <p class="history-title" title="${item.title}">${item.title}</p>
-      <p class="history-url" title="${item.url}">${truncateUrl(item.url)}</p>
-    </div>
-  `).join('');
+    historyList.innerHTML = classifications.slice(0, 10).map(item => {
+        const tagColor = getTagColor(item.category);
+        return `
+            <div class="history-item">
+              <div class="history-header">
+                <span class="category-badge" style="background: ${tagColor};">${item.category}</span>
+                <span class="history-time">${formatTime(item.timestamp)}</span>
+              </div>
+              <p class="history-title" title="${item.title}">${item.title}</p>
+              <p class="history-url" title="${item.url}">${truncateUrl(item.url)}</p>
+            </div>
+        `;
+    }).join('');
 }
 
 // 清空历史记录
@@ -268,58 +352,20 @@ function clearHistory() {
     }
 }
 
-// 获取分类对应的CSS类
-function getCategoryClass(category) {
-    const classMap = {
-        '新闻资讯': 'news',
-        '技术文档': 'tech',
-        '娱乐休闲': 'entertainment',
-        '电商购物': 'shopping',
-        '社交媒体': 'social',
-        '教育学习': 'education',
-        '生活服务': 'life',
-        '其他': 'other'
-    };
-    return classMap[category] || 'other';
-}
-
-// 获取置信度文本
+// 辅助函数
 function getConfidenceText(confidence) {
-    const textMap = {
-        'high': '高置信度',
-        'medium': '中等置信度',
-        'low': '低置信度'
-    };
-    return textMap[confidence] || '未知';
+    return { 'high': '高置信度', 'medium': '中等置信度', 'low': '低置信度' }[confidence] || '未知';
 }
 
-// 格式化时间
 function formatTime(timestamp) {
+    const diff = Date.now() - new Date(timestamp).getTime();
+    if (diff < 60000) return '刚刚';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
     const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now - date;
-
-    // 小于1分钟
-    if (diff < 60000) {
-        return '刚刚';
-    }
-
-    // 小于1小时
-    if (diff < 3600000) {
-        return `${Math.floor(diff / 60000)}分钟前`;
-    }
-
-    // 小于1天
-    if (diff < 86400000) {
-        return `${Math.floor(diff / 3600000)}小时前`;
-    }
-
-    // 显示日期
     return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-// 截断URL
 function truncateUrl(url) {
-    if (url.length <= 50) return url;
-    return url.slice(0, 47) + '...';
+    return url.length <= 50 ? url : url.slice(0, 47) + '...';
 }

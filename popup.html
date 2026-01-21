@@ -10,69 +10,93 @@
 
 <body>
   <div class="container">
-    <!-- 头部 -->
-    <header class="header">
-      <h1>🤖 AI网页分类</h1>
-      <p class="subtitle">智能识别页面内容类型</p>
-    </header>
+    <!-- 设置视图 (Setup View) -->
+    <div id="setupView" class="view hidden">
+      <header class="header">
+        <h1>🏷️ 选择常用标签</h1>
+        <p class="subtitle">请选择您关注的内容类型（多选）</p>
+      </header>
 
-    <!-- API密钥设置 -->
-    <section class="section api-section">
-      <div class="section-header">
-        <h2>⚙️ API设置</h2>
-        <button id="toggleApiKey" class="btn-icon" title="显示/隐藏">👁️</button>
-      </div>
-
-      <!-- AI提供商选择 -->
-      <div class="provider-select-group">
-        <label for="aiProvider" class="select-label">AI提供商</label>
-        <select id="aiProvider" class="select-field">
-          <option value="openai">OpenAI (GPT-3.5/4)</option>
-          <option value="gemini">Google Gemini</option>
-        </select>
-      </div>
-
-      <div class="api-input-group">
-        <input type="password" id="apiKey" placeholder="输入API密钥" class="input-field">
-        <button id="saveApiKey" class="btn btn-primary">保存</button>
-      </div>
-      <div id="apiKeyStatus" class="status-message"></div>
-      <p class="help-text" id="apiHelpText">
-        💡 获取API密钥：<a href="https://platform.openai.com/api-keys" target="_blank" id="apiProviderLink">OpenAI平台</a>
-      </p>
-    </section>
-
-    <!-- 当前页面分类 -->
-    <section class="section">
-      <h2>📄 当前页面</h2>
-      <button id="classifyBtn" class="btn btn-classify">
-        <span class="btn-text">开始分类</span>
-        <span class="spinner hidden">⏳</span>
-      </button>
-
-      <div id="currentResult" class="result-card hidden">
-        <div class="result-header">
-          <span id="categoryBadge" class="category-badge"></span>
-          <span id="confidenceBadge" class="confidence-badge"></span>
+      <div class="section">
+        <div id="tagsGrid" class="tags-grid">
+          <!-- 标签将由JS动态生成 -->
         </div>
-        <p id="pageTitle" class="page-title"></p>
-        <p id="categoryReason" class="reason-text"></p>
-        <p id="timestamp" class="timestamp"></p>
+        <button id="enterMainBtn" class="btn btn-primary btn-large"
+          style="margin-top: 20px; width: 100%;">确认并进入</button>
       </div>
+    </div>
 
-      <div id="errorMessage" class="error-message hidden"></div>
-    </section>
+    <!-- 主视图 (Main View) -->
+    <div id="mainView" class="view hidden">
+      <!-- 头部 -->
+      <header class="header">
+        <div class="header-content">
+          <div>
+            <h1>🤖 AI网页分类</h1>
+            <p class="subtitle">智能识别页面内容类型</p>
+          </div>
+          <button id="openSettings" class="btn-icon" title="设置标签">⚙️</button>
+        </div>
+      </header>
 
-    <!-- 历史记录 -->
-    <section class="section">
-      <div class="section-header">
-        <h2>📚 历史记录</h2>
-        <button id="clearHistory" class="btn-text-link">清空</button>
-      </div>
-      <div id="historyList" class="history-list">
-        <p class="empty-state">暂无分类记录</p>
-      </div>
-    </section>
+      <!-- API密钥设置 -->
+      <section class="section api-section">
+        <div class="section-header">
+          <h2>⚙️ API设置</h2>
+          <button id="toggleApiKey" class="btn-icon" title="显示/隐藏">👁️</button>
+        </div>
+
+        <!-- AI提供商选择 -->
+        <div class="provider-select-group">
+          <label for="aiProvider" class="select-label">AI提供商</label>
+          <select id="aiProvider" class="select-field">
+            <option value="openai">OpenAI (GPT-3.5/4)</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </div>
+
+        <div class="api-input-group">
+          <input type="password" id="apiKey" placeholder="输入API密钥" class="input-field">
+          <button id="saveApiKey" class="btn btn-primary">保存</button>
+        </div>
+        <div id="apiKeyStatus" class="status-message"></div>
+        <p class="help-text" id="apiHelpText">
+          💡 获取API密钥：<a href="https://platform.openai.com/api-keys" target="_blank" id="apiProviderLink">OpenAI平台</a>
+        </p>
+      </section>
+
+      <!-- 当前页面分类 -->
+      <section class="section">
+        <h2>📄 当前页面</h2>
+        <button id="classifyBtn" class="btn btn-classify">
+          <span class="btn-text">开始分类</span>
+          <span class="spinner hidden">⏳</span>
+        </button>
+
+        <div id="currentResult" class="result-card hidden">
+          <div class="result-header">
+            <span id="categoryBadge" class="category-badge"></span>
+            <span id="confidenceBadge" class="confidence-badge"></span>
+          </div>
+          <p id="pageTitle" class="page-title"></p>
+          <p id="categoryReason" class="reason-text"></p>
+          <p id="timestamp" class="timestamp"></p>
+        </div>
+
+        <div id="errorMessage" class="error-message hidden"></div>
+      </section>
+
+      <!-- 历史记录 -->
+      <section class="section">
+        <div class="section-header">
+          <h2>📚 历史记录</h2>
+          <button id="clearHistory" class="btn-text-link">清空</button>
+        </div>
+        <div id="historyList" class="history-list">
+          <p class="empty-state">暂无分类记录</p>
+        </div>
+      </section>
+    </div>
   </div>
 
   <script src="popup.js"></script>

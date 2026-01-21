@@ -20,6 +20,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // 返回true表示异步响应
         return true;
     }
+
+    // 同步标签组颜色请求
+    if (request.type === 'SYNC_TAB_GROUP_COLORS') {
+        console.log('🔄 收到同步标签组颜色请求');
+        updateAllTabGroupColors()
+            .then(() => {
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('同步颜色失败:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    }
 });
 
 // 处理分类请求
@@ -33,9 +47,9 @@ async function handleClassifyRequest(pageData, tab) {
     // 2. 根据提供商调用相应的API
     let classification;
     if (config.provider === 'openai') {
-        classification = await classifyWithOpenAI(pageData, config.apiKey);
+        classification = await classifyWithOpenAI(pageData, config.apiKey, config.enabledTags);
     } else {
-        classification = await classifyWithGemini(pageData, config.apiKey);
+        classification = await classifyWithGemini(pageData, config.apiKey, config.enabledTags);
     }
 
     // 3. 保存分类结果
@@ -52,30 +66,34 @@ async function handleClassifyRequest(pageData, tab) {
 // 从存储中获取配置
 async function getConfig() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['ai_provider', 'openai_api_key', 'gemini_api_key'], (result) => {
+        chrome.storage.local.get(['ai_provider', 'openai_api_key', 'gemini_api_key', 'enabled_tags'], (result) => {
             const provider = result.ai_provider || 'openai';
             const apiKey = provider === 'openai' ? result.openai_api_key : result.gemini_api_key;
-            resolve({ provider, apiKey: apiKey || '' });
+            // 默认标签列表
+            const defaultTags = [
+                '新闻资讯', '技术文档', '娱乐休闲', '电商购物',
+                '社交媒体', '教育学习', '生活服务', '其他'
+            ];
+            const enabledTags = result.enabled_tags && result.enabled_tags.length > 0 ? result.enabled_tags : defaultTags;
+
+            resolve({ provider, apiKey: apiKey || '', enabledTags });
         });
     });
 }
 
 // 调用OpenAI API进行分类
-async function classifyWithOpenAI(pageData, apiKey) {
+async function classifyWithOpenAI(pageData, apiKey, enabledTags) {
+    const tagsList = enabledTags.map(tag => `- ${tag}`).join('\n');
+
     const prompt = `请分析以下网页内容，并将其分类到最合适的类别中。
 
 网页标题：${pageData.title}
 网页内容：${pageData.text}
 
 请从以下类别中选择一个最合适的：
-- 新闻资讯：时事新闻、财经新闻、社会新闻等
-- 技术文档：编程教程、技术博客、API文档、开发指南等
-- 娱乐休闲：视频、音乐、游戏、影评、综艺等
-- 电商购物：商品页面、购物网站、价格比较等
-- 社交媒体：微博、推特、论坛帖子、社区讨论等
-- 教育学习：在线课程、学术论文、学习资料、知识分享等
-- 生活服务：美食、旅游、健康、房产、招聘等
-- 其他：无法归类到以上类别的内容
+${tagsList}
+
+请以JSON格式返回结果，格式如下：
 
 请以JSON格式返回结果，格式如下：
 {
@@ -125,14 +143,16 @@ async function classifyWithOpenAI(pageData, apiKey) {
 }
 
 // 调用Gemini API进行分类 - 优化版
-async function classifyWithGemini(pageData, apiKey) {
+async function classifyWithGemini(pageData, apiKey, enabledTags) {
+    const tagsString = enabledTags.join(', ');
+
     // 简洁的英文prompt，避免Gemini返回markdown
     const prompt = `Classify this webpage. Return ONLY pure JSON, no markdown, no code blocks, no explanations.
 
 Title: ${pageData.title}
 Content: ${pageData.text.slice(0, 2000)}
 
-Categories: 新闻资讯, 技术文档, 娱乐休闲, 电商购物, 社交媒体, 教育学习, 生活服务, 其他
+Categories: ${tagsString}
 
 Required JSON format (output this directly):
 {"category":"类别","reason":"简短理由","confidence":"high"}`;
@@ -282,21 +302,12 @@ async function addToTabGroup(tabId, category) {
             // 先创建组（将当前标签加入组即可创建组）
             groupId = await chrome.tabs.group({ tabIds: [tabId] });
 
-            // 设置组的属性
-            const colorMap = {
-                '新闻资讯': 'red',
-                '技术文档': 'blue',
-                '娱乐休闲': 'purple',
-                '电商购物': 'orange',
-                '社交媒体': 'cyan',
-                '教育学习': 'green',
-                '生活服务': 'yellow',
-                '其他': 'grey'
-            };
+            // 获取动态颜色设置
+            const chromeColor = await getTagChromeColor(category);
 
             await chrome.tabGroups.update(groupId, {
                 title: category,
-                color: colorMap[category] || 'grey',
+                color: chromeColor,
                 collapsed: false
             });
 
@@ -329,24 +340,9 @@ async function getOrCreateTabGroup(category, windowId) {
     }
 
     // 创建新的标签组
-    // 注意：我们返回groupId后，调用者会将目标标签添加到此组
-    // 所以这里只需要创建一个空组即可
     console.log(`🆕 准备创建新标签组: ${category}`);
 
-    // 颜色映射
-    const colorMap = {
-        '新闻资讯': 'red',
-        '技术文档': 'blue',
-        '娱乐休闲': 'purple',
-        '电商购物': 'orange',
-        '社交媒体': 'cyan',
-        '教育学习': 'green',
-        '生活服务': 'yellow',
-        '其他': 'grey'
-    };
-
     // 直接返回-1，让addToTabGroup函数处理组的创建
-    // 这样可以避免创建临时标签的问题
     return -1;  // 特殊值，表示需要创建新组
 }
 
@@ -404,3 +400,54 @@ chrome.runtime.onInstalled.addListener((details) => {
     }
 });
 
+// 获取标签对应的 Chrome 颜色 (固定映射)
+function getTagChromeColor(category) {
+    const colorMap = {
+        '学习工作': 'blue',
+        '影视娱乐': 'purple',
+        'AI工具': 'cyan',
+        '购物消费': 'red',
+        '社交媒体': 'pink',
+        '新闻阅读': 'grey',
+        '技术开发': 'green',
+        '金融理财': 'orange',
+        '生活日常': 'yellow',
+        '其他分类': 'grey',
+        // 旧版标签兼容
+        '新闻资讯': 'red',
+        '技术文档': 'blue',
+        '娱乐休闲': 'purple',
+        '电商购物': 'orange',
+        '教育学习': 'green',
+        '生活服务': 'yellow',
+        '其他': 'grey'
+    };
+    return colorMap[category] || 'grey';
+}
+
+// 更新所有现有标签组的颜色
+async function updateAllTabGroupColors() {
+    try {
+        // 获取所有窗口
+        const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
+
+        for (const window of windows) {
+            // 获取该窗口的所有标签组
+            const groups = await chrome.tabGroups.query({ windowId: window.id });
+
+            for (const group of groups) {
+                if (group.title) {
+                    const newColor = await getTagChromeColor(group.title);
+                    try {
+                        await chrome.tabGroups.update(group.id, { color: newColor });
+                        console.log(`🎨 更新标签组 "${group.title}" 颜色为 ${newColor}`);
+                    } catch (e) {
+                        console.warn(`⚠️ 无法更新标签组 "${group.title}":`, e.message);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ 更新标签组颜色失败:', error);
+    }
+}

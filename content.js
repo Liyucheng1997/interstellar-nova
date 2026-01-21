@@ -8,27 +8,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('收到手动分类请求');
     classifyCurrentPage();
     sendResponse({ status: 'started' });
+    return true;
   }
-  return true;
 });
 
 // 提取并分类当前页面
 function classifyCurrentPage() {
   // 提取页面主要信息
   const pageData = extractPageData();
-  
+
   // 检查是否有有效内容
   if (!pageData.text || pageData.text.trim().length < 50) {
     console.log('页面内容过少，跳过分类');
     return;
   }
-  
+
   console.log('提取的页面数据:', {
     title: pageData.title,
     url: pageData.url,
     textLength: pageData.text.length
   });
-  
+
   // 发送给后台服务进行分类
   chrome.runtime.sendMessage({
     type: 'CLASSIFY_PAGE',
@@ -38,7 +38,7 @@ function classifyCurrentPage() {
       console.error('消息发送失败:', chrome.runtime.lastError);
       return;
     }
-    
+
     if (response && response.success) {
       console.log('分类成功:', response.result);
       // 可以在页面上显示一个临时通知（可选）
@@ -53,13 +53,13 @@ function classifyCurrentPage() {
 function extractPageData() {
   // 获取页面标题
   const title = document.title || '';
-  
+
   // 获取页面URL
   const url = window.location.href;
-  
+
   // 提取页面文本内容（优先提取主要内容区域）
   let text = '';
-  
+
   // 尝试获取主要内容区域
   const mainContent = document.querySelector('main, article, .content, .main-content, #content');
   if (mainContent) {
@@ -68,17 +68,17 @@ function extractPageData() {
     // 如果没有找到主要内容区域，使用整个body
     text = document.body.innerText;
   }
-  
+
   // 清理文本：移除多余空白和换行
   text = text
     .replace(/\s+/g, ' ')  // 将多个空白字符替换为单个空格
     .trim();
-  
+
   // 限制文本长度为4000字符（避免token超限）
   if (text.length > 4000) {
     text = text.slice(0, 4000);
   }
-  
+
   return {
     title,
     url,
@@ -104,14 +104,14 @@ function showNotification(result) {
     max-width: 300px;
     animation: slideIn 0.3s ease-out;
   `;
-  
+
   notification.innerHTML = `
     <div style="font-weight: bold; margin-bottom: 4px;">✨ 页面已分类</div>
     <div>类别：${result.category}</div>
   `;
-  
+
   document.body.appendChild(notification);
-  
+
   // 3秒后自动移除
   setTimeout(() => {
     notification.style.animation = 'slideOut 0.3s ease-in';
