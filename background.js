@@ -38,6 +38,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 处理分类请求
 async function handleClassifyRequest(pageData, tab) {
+    // 0. 检查缓存 (URL完全匹配)
+    const cachedResult = await checkCache(pageData.url);
+    if (cachedResult) {
+        console.log('✅ 命中URL缓存:', cachedResult);
+
+        // 更新时间戳并重新保存，以便前端能检测到变化
+        await saveClassification(pageData, {
+            ...cachedResult,
+            reason: cachedResult.reason.includes('(已缓存)') ? cachedResult.reason : `${cachedResult.reason} (已缓存)`
+        });
+
+        // 如果有tab，确保它在正确的组里
+        if (tab && tab.id) {
+            await addToTabGroup(tab.id, cachedResult.category);
+        }
+        return { ...cachedResult, fromCache: true };
+    }
+
+    // 0.5 检查域名规则 (同域名自动归类)
+    const domainResult = await checkDomainRule(pageData.url);
+    if (domainResult) {
+        console.log('✅ 命中域名规则:', domainResult);
+        // 保存一条新的分类记录 (虽然是基于规则，但也算一次分类)
+        const classification = {
+            category: domainResult.category,
+            reason: `基于域名规则自动分类 (${domainResult.domain})`,
+            confidence: 'high'
+        };
+        await saveClassification(pageData, classification);
+
+        if (tab && tab.id) {
+            await addToTabGroup(tab.id, classification.category);
+        }
+        return { ...classification, fromDomainRule: true };
+    }
+
     // 1. 获取AI提供商和API密钥
     const config = await getConfig();
     if (!config.apiKey) {
@@ -52,7 +88,7 @@ async function handleClassifyRequest(pageData, tab) {
         classification = await classifyWithGemini(pageData, config.apiKey, config.enabledTags);
     }
 
-    // 3. 保存分类结果
+    // 3. 保存分类结果 (同时更新域名规则)
     await saveClassification(pageData, classification);
 
     // 4. 将标签页添加到对应的标签组
@@ -349,6 +385,9 @@ async function getOrCreateTabGroup(category, windowId) {
 
 // 保存分类结果到本地存储
 async function saveClassification(pageData, classification) {
+    // 保存域名规则
+    await saveDomainRule(pageData.url, classification.category);
+
     return new Promise((resolve) => {
         // 创建分类记录
         const record = {
@@ -449,5 +488,65 @@ async function updateAllTabGroupColors() {
         }
     } catch (error) {
         console.error('❌ 更新标签组颜色失败:', error);
+    }
+}
+
+// --- 缓存与规则辅助函数 ---
+
+// 检查URL缓存
+async function checkCache(url) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['classifications'], (result) => {
+            const classifications = result.classifications || [];
+            // 查找最近的匹配记录 (只看最近100条)
+            const match = classifications.find(c => c.url === url);
+            resolve(match || null);
+        });
+    });
+}
+
+// 检查域名规则
+async function checkDomainRule(url) {
+    const domain = getDomain(url);
+    if (!domain) return null;
+
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['domain_rules'], (result) => {
+            const rules = result.domain_rules || {};
+            const category = rules[domain];
+            if (category) {
+                resolve({ domain, category });
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+// 保存域名规则
+async function saveDomainRule(url, category) {
+    const domain = getDomain(url);
+    if (!domain) return;
+
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['domain_rules'], (result) => {
+            const rules = result.domain_rules || {};
+            // 更新规则 (覆盖旧的)
+            rules[domain] = category;
+            chrome.storage.local.set({ domain_rules: rules }, () => {
+                console.log(`📏 更新域名规则: ${domain} -> ${category}`);
+                resolve();
+            });
+        });
+    });
+}
+
+// 提取域名
+function getDomain(url) {
+    try {
+        const u = new URL(url);
+        return u.hostname;
+    } catch (e) {
+        return null;
     }
 }

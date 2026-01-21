@@ -300,6 +300,10 @@ function displayResult(result) {
     categoryReason.textContent = result.reason;
     timestamp.textContent = `分类时间: ${formatTime(result.timestamp)}`;
 
+    if (result.reason.includes('(已缓存)')) {
+        showStatus('已存在分类记录 (无需AI)', 'success');
+    }
+
     resultCard.classList.remove('hidden');
 }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-01-21
+
+### Added
+
+- **Smart Duplicate Prevention**:
+  - Automatically detects if a page has already been classified.
+  - Returns cached results instantly to save AI quota and time.
+  - Displays a "Already classified" status in the popup.
+- **Domain-based Auto-Grouping**:
+  - Learns from your classifications: once a domain is classified (e.g., `bilibili.com` -> `Entertainment`), future pages from that domain are automatically grouped into the same category.
+  - Skips AI analysis for known domains, significantly improving speed and consistency.
+
 ## [1.2.0] - 2026-01-21
 
 ### Changed
