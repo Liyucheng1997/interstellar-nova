@@ -571,6 +571,7 @@ function getDomain(url) {
 // --- 自动分类逻辑 ---
 
 let tabTimers = {};
+let tabLastNotifiedDomain = {};
 
 // 监听标签页更新
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -584,6 +585,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     if (tabTimers[tabId]) {
         clearTimeout(tabTimers[tabId]);
         delete tabTimers[tabId];
+    }
+    if (tabLastNotifiedDomain[tabId]) {
+        delete tabLastNotifiedDomain[tabId];
     }
 });
 
@@ -663,12 +667,23 @@ function startAutoClassifyTimer(tabId, url) {
 
                     if (injectionResults && injectionResults[0]) {
                         const pageData = injectionResults[0].result;
+                        const currentDomain = getDomain(pageData.url);
 
                         // ★ 核心检查：该标签页是否已经在某个标签组中？
                         if (currentTab.groupId && currentTab.groupId !== -1) {
                             try {
                                 const group = await chrome.tabGroups.get(currentTab.groupId);
                                 console.log('✅ [Auto] 该标签页已在标签组中:', group.title);
+
+                                // 防打扰检查：如果上次已通知过该域名，且域名未变，则不再提示
+                                if (tabLastNotifiedDomain[tabId] === currentDomain) {
+                                    console.log('🤫 [Auto] 同域名内跳转，跳过重复提示');
+                                    return;
+                                }
+
+                                // 记录本次通知的域名
+                                tabLastNotifiedDomain[tabId] = currentDomain;
+
                                 // 直接显示"已归类"绿色提示
                                 chrome.tabs.sendMessage(tabId, {
                                     type: 'SHOW_ALREADY_CLASSIFIED',
@@ -685,6 +700,9 @@ function startAutoClassifyTimer(tabId, url) {
                                 console.warn('⚠️ [Auto] 获取标签组信息失败:', e);
                             }
                         }
+
+                        // 如果不在标签组中，清除该标签页的通知记录（因为它可能退出了标签组）
+                        delete tabLastNotifiedDomain[tabId];
 
                         // 没有在标签组中，调用AI进行分类
                         console.log('🤖 [Auto] 调用AI分类...');
