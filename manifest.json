@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI网页智能分类助手",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "使用AI技术自动分类网页内容，并智能整理到标签组中",
   "permissions": [
     "activeTab",

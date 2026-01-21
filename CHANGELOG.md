@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.0] - 2026-01-21
+
+### Improved
+
+- **AI 分类逻辑优化**:
+  - 引入 URL 信息作为分类的重要特征，大幅提高识别准确率。
+  - 添加针对性的分类规则：
+    - GitHub, GitLab, StackOverflow 等自动识别为 "技术开发"。
+    - AI Studio, ChatGPT, Claude 等自动识别为 "AI工具"。
+    - Bilibili, YouTube 等自动识别为 "影视娱乐"。
+  - 解决了部分技术网站被误判为"其他"的问题。
+
+---
+
 ## [1.5.0] - 2026-01-21
 
 ### Added

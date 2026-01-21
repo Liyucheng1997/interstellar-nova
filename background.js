@@ -123,13 +123,18 @@ async function classifyWithOpenAI(pageData, apiKey, enabledTags) {
 
     const prompt = `请分析以下网页内容，并将其分类到最合适的类别中。
 
+网页URL：${pageData.url}
 网页标题：${pageData.title}
-网页内容：${pageData.text}
+网页内容：${pageData.text.slice(0, 3000)}
 
 请从以下类别中选择一个最合适的：
 ${tagsList}
 
-请以JSON格式返回结果，格式如下：
+重要分类规则：
+1. 包含 github.com, gitlab.com, stackoverflow.com 等编程相关网站，必须分类为"技术开发"。
+2. 包含 chatgpt.com, openai.com, gemini.google.com, claude.ai, aistudio.google.com 等AI工具网站，必须分类为"AI工具"。
+3. 包含 youtube.com, bilibili.com 等视频网站，分类为"影视娱乐"。
+4. 包含 taobao.com, jd.com, amazon.com 等购物网站，分类为"购物消费"。
 
 请以JSON格式返回结果，格式如下：
 {
@@ -185,10 +190,17 @@ async function classifyWithGemini(pageData, apiKey, enabledTags) {
     // 简洁的英文prompt，避免Gemini返回markdown
     const prompt = `Classify this webpage. Return ONLY pure JSON, no markdown, no code blocks, no explanations.
 
+URL: ${pageData.url}
 Title: ${pageData.title}
 Content: ${pageData.text.slice(0, 2000)}
 
 Categories: ${tagsString}
+
+Rules:
+1. github.com, gitlab.com, stackoverflow.com -> "技术开发"
+2. chatgpt.com, openai.com, gemini.google.com, claude.ai, aistudio.google.com -> "AI工具"
+3. youtube.com, bilibili.com -> "影视娱乐"
+4. taobao.com, jd.com, amazon.com -> "购物消费"
 
 Required JSON format (output this directly):
 {"category":"类别","reason":"简短理由","confidence":"high"}`;
